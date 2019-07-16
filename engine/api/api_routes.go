@@ -99,7 +99,7 @@ func (api *API) InitRouter() {
 	r.Handle("/download/{name}/{os}/{arch}", ScopeNone(), r.GET(api.downloadHandler, Auth(false)))
 
 	// Group
-	r.Handle("/group", Scope(sdk.AuthConsumerScopeGroup), r.GET(api.getGroupsHandler), r.POST(api.addGroupHandler))
+	r.Handle("/group", Scope(sdk.AuthConsumerScopeGroup), r.GET(api.getGroupsHandler), r.POST(api.postGroupHandler))
 	r.Handle("/group/{permGroupName}", Scope(sdk.AuthConsumerScopeGroup), r.GET(api.getGroupHandler), r.PUT(api.updateGroupHandler), r.DELETE(api.deleteGroupHandler))
 	r.Handle("/group/{permGroupName}/user", Scope(sdk.AuthConsumerScopeGroup), r.POST(api.addUserInGroupHandler))
 	r.Handle("/group/{permGroupName}/user/{user}", Scope(sdk.AuthConsumerScopeGroup), r.DELETE(api.removeUserFromGroupHandler))

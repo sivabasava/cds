@@ -28,36 +28,6 @@ func DeleteGroupAndDependencies(db gorp.SqlExecutor, group *sdk.Group) error {
 	return nil
 }
 
-// AddGroup creates a new group in database
-func AddGroup(db gorp.SqlExecutor, group *sdk.Group) (int64, bool, error) {
-	// check projectKey pattern
-	regexp := sdk.NamePatternRegex
-	if !regexp.MatchString(group.Name) {
-		return 0, false, sdk.WrapError(sdk.ErrInvalidGroupPattern, "AddGroup: Wrong pattern for group name: %s", group.Name)
-	}
-
-	// Check that group does not already exists
-	query := `SELECT id FROM "group" WHERE "group".name = $1`
-	rows, errq := db.Query(query, group.Name)
-	if errq != nil {
-		return 0, false, sdk.WrapError(errq, "AddGroup: Cannot check if group %s exists", group.Name)
-	}
-	defer rows.Close()
-
-	if rows.Next() {
-		var groupID int64
-		if err := rows.Scan(&groupID); err != nil {
-			return 0, false, sdk.WrapError(sdk.ErrGroupExists, "AddGroup: Cannot get the ID of the existing group %s (%s)", group.Name, err)
-		}
-		return groupID, false, sdk.WrapError(sdk.ErrGroupExists, "AddGroup: Group %s already exists", group.Name)
-	}
-
-	if err := InsertGroup(db, group); err != nil {
-		return 0, false, sdk.WrapError(err, "AddGroup: Cannot insert group")
-	}
-	return group.ID, true, nil
-}
-
 // CheckUserInGroup verivies that user is in given group
 func CheckUserInGroup(db gorp.SqlExecutor, groupID, userID int64) (bool, error) {
 	query := `SELECT COUNT(user_id) FROM group_user WHERE group_id = $1 AND user_id = $2`
@@ -146,8 +116,8 @@ func UpdateGroup(db gorp.SqlExecutor, g *sdk.Group, oldName string) error {
 	return err
 }
 
-// InsertGroup insert given group into given database
-func InsertGroup(db gorp.SqlExecutor, g *sdk.Group) error {
+// Insert given group into database.
+func Insert(db gorp.SqlExecutor, g *sdk.Group) error {
 	rx := sdk.NamePatternRegex
 	if !rx.MatchString(g.Name) {
 		return sdk.NewError(sdk.ErrInvalidName, fmt.Errorf("Invalid group name. It should match %s", sdk.NamePattern))
@@ -155,7 +125,7 @@ func InsertGroup(db gorp.SqlExecutor, g *sdk.Group) error {
 
 	query := `INSERT INTO "group" (name) VALUES($1) RETURNING id`
 	err := db.QueryRow(query, g.Name).Scan(&g.ID)
-	return err
+	return sdk.WithStack(err)
 }
 
 // LoadGroupByProject retrieves all groups related to project

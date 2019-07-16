@@ -390,7 +390,7 @@ func (api *API) putProjectLabelsHandler() service.Handler {
 	}
 }
 
-func (api *API) addProjectHandler() service.Handler {
+func (api *API) postProjectHandler() service.Handler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 		//Unmarshal data
 		var p sdk.Project
@@ -413,12 +413,11 @@ func (api *API) addProjectHandler() service.Handler {
 		if errExist != nil {
 			return sdk.WrapError(errExist, "Cannot check if project %s exist", p.Key)
 		}
-
 		if exist {
 			return sdk.WrapError(sdk.ErrConflict, "Project %s already exists", p.Key)
 		}
 
-		var groupAttached bool
+		var groupIDs bool
 		for i := range p.ProjectGroups {
 			groupPermission := &p.ProjectGroups[i]
 			if strings.TrimSpace(groupPermission.Group.Name) == "" {
@@ -542,30 +541,35 @@ func (api *API) addProjectHandler() service.Handler {
 			}
 		}
 
-		integrationModels, errP := integration.LoadModels(tx)
-		if errP != nil {
-			return sdk.WrapError(errP, "addProjectHandler> Cannot load integration models")
+		integrationModels, err := integration.LoadModels(tx)
+		if err != nil {
+			return sdk.WrapError(err, "cannot load integration models")
 		}
 
 		for i := range integrationModels {
 			pf := &integrationModels[i]
 			if err := propagatePublicIntegrationModelOnProject(tx, api.Cache, *pf, p, consumer); err != nil {
-				return sdk.WrapError(err, "propagatePublicIntegrationModelOnProject error")
+				return sdk.WithStack(err)
 			}
 		}
 
 		if err := tx.Commit(); err != nil {
-			return sdk.WrapError(err, "Cannot commit transaction")
+			return sdk.WrapError(err, "cannot commit transaction")
 		}
 
 		event.PublishAddProject(&p, consumer)
 
-		proj, errL := project.Load(api.mustDB(), api.Cache, p.Key, project.LoadOptions.WithLabels, project.LoadOptions.WithWorkflowNames,
+		proj, err := project.Load(api.mustDB(), api.Cache, p.Key,
+			project.LoadOptions.WithLabels,
+			project.LoadOptions.WithWorkflowNames,
 			project.LoadOptions.WithFavorites(consumer.AuthentifiedUser.OldUserStruct.ID),
-			project.LoadOptions.WithKeys, project.LoadOptions.WithPermission,
-			project.LoadOptions.WithIntegrations, project.LoadOptions.WithVariables)
-		if errL != nil {
-			return sdk.WrapError(errL, "Cannot load project %s", p.Key)
+			project.LoadOptions.WithKeys,
+			project.LoadOptions.WithPermission,
+			project.LoadOptions.WithIntegrations,
+			project.LoadOptions.WithVariables,
+		)
+		if err != nil {
+			return sdk.WrapError(err, "cannot load project %s", p.Key)
 		}
 
 		proj.Permissions.Readable = true

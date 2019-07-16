@@ -14,6 +14,36 @@ import (
 	"github.com/ovh/cds/sdk"
 )
 
+func (api *API) getGroupsHandler() service.Handler {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+		var groups []sdk.Group
+		var err error
+
+		withoutDefault := FormBool(r, "withoutDefault")
+		if isMaintainer(ctx) {
+			groups, err = group.LoadAll(ctx, api.mustDB())
+		} else {
+			groups, err = group.LoadAllByDeprecatedUserID(ctx, api.mustDB(), getAPIConsumer(ctx).AuthentifiedUser.OldUserStruct.ID)
+		}
+		if err != nil {
+			return err
+		}
+
+		// withoutDefault is use by project add, to avoid selecting the default group on project creation
+		if withoutDefault {
+			var filteredGroups []sdk.Group
+			for _, g := range groups {
+				if !group.IsDefaultGroupID(g.ID) {
+					filteredGroups = append(filteredGroups, g)
+				}
+			}
+			return service.WriteJSON(w, filteredGroups, http.StatusOK)
+		}
+
+		return service.WriteJSON(w, groups, http.StatusOK)
+	}
+}
+
 func (api *API) getGroupHandler() service.Handler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 		vars := mux.Vars(r)
@@ -25,6 +55,52 @@ func (api *API) getGroupHandler() service.Handler {
 		}
 
 		return service.WriteJSON(w, g, http.StatusOK)
+	}
+}
+
+func (api *API) postGroupHandler() service.Handler {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+		var data sdk.Group
+		if err := service.UnmarshalBody(r, &data); err != nil {
+			return err
+		}
+		//if err := data.IsValid(); err != nil {
+		//	return err
+		//}
+
+		tx, err := api.mustDB().Begin()
+		if err != nil {
+			return sdk.WrapError(err, "cannot begin tx")
+		}
+		defer tx.Rollback()
+
+		existingGroup, err := group.LoadByName(ctx, tx, data.Name)
+		if err != nil && !sdk.ErrorIs(err, sdk.ErrNotFound) {
+			return err
+		}
+		if existingGroup != nil {
+			return sdk.WithStack(sdk.ErrGroupPresent)
+		}
+		if err := group.Insert(tx, &data); err != nil {
+			return sdk.WrapError(err, "cannot add group")
+		}
+
+		consumer := getAPIConsumer(ctx)
+
+		// Add caller into group
+		if err := group.InsertUserInGroup(tx, data.ID, consumer.AuthentifiedUser.OldUserStruct.ID, false); err != nil {
+			return sdk.WrapError(err, "cannot add user %s in group %s", consumer.AuthentifiedUser.Username, data.Name)
+		}
+		// and set it admin
+		if err := group.SetUserGroupAdmin(tx, data.ID, consumer.AuthentifiedUser.OldUserStruct.ID); err != nil {
+			return sdk.WrapError(err, "cannot set user group admin")
+		}
+
+		if err := tx.Commit(); err != nil {
+			return sdk.WrapError(err, "cannot commit tx")
+		}
+
+		return service.WriteJSON(w, data, http.StatusCreated)
 	}
 }
 
@@ -136,72 +212,6 @@ func (api *API) updateGroupHandler() service.Handler {
 		}
 
 		return service.WriteJSON(w, updatedGroup, http.StatusOK)
-	}
-}
-
-func (api *API) getGroupsHandler() service.Handler {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-		var groups []sdk.Group
-		var err error
-
-		withoutDefault := FormBool(r, "withoutDefault")
-		if isMaintainer(ctx) {
-			groups, err = group.LoadAll(ctx, api.mustDB())
-		} else {
-			groups, err = group.LoadAllByDeprecatedUserID(ctx, api.mustDB(), getAPIConsumer(ctx).AuthentifiedUser.OldUserStruct.ID)
-		}
-		if err != nil {
-			return err
-		}
-
-		// withoutDefault is use by project add, to avoid selecting the default group on project creation
-		if withoutDefault {
-			var filteredGroups []sdk.Group
-			for _, g := range groups {
-				if !group.IsDefaultGroupID(g.ID) {
-					filteredGroups = append(filteredGroups, g)
-				}
-			}
-			return service.WriteJSON(w, filteredGroups, http.StatusOK)
-		}
-
-		return service.WriteJSON(w, groups, http.StatusOK)
-	}
-}
-
-func (api *API) addGroupHandler() service.Handler {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-		g := &sdk.Group{}
-		if err := service.UnmarshalBody(r, g); err != nil {
-			return sdk.WrapError(err, "cannot unmarshal")
-		}
-
-		tx, errb := api.mustDB().Begin()
-		if errb != nil {
-			return sdk.WrapError(errb, "Cannot begin tx")
-		}
-		defer tx.Rollback()
-
-		if _, _, err := group.AddGroup(tx, g); err != nil {
-			return sdk.WrapError(err, "Cannot add group")
-		}
-
-		consumer := getAPIConsumer(ctx)
-
-		// Add caller into group
-		if err := group.InsertUserInGroup(tx, g.ID, consumer.AuthentifiedUser.OldUserStruct.ID, false); err != nil {
-			return sdk.WrapError(err, "Cannot add user %s in group %s", consumer.AuthentifiedUser.Username, g.Name)
-		}
-		// and set it admin
-		if err := group.SetUserGroupAdmin(tx, g.ID, consumer.AuthentifiedUser.OldUserStruct.ID); err != nil {
-			return sdk.WrapError(err, "Cannot set user group admin")
-		}
-
-		if err := tx.Commit(); err != nil {
-			return sdk.WrapError(err, "Cannot commit tx")
-		}
-
-		return service.WriteJSON(w, g, http.StatusCreated)
 	}
 }
 
