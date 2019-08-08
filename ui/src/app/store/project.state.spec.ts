@@ -13,6 +13,7 @@ import { RepositoriesManager } from 'app/model/repositories.model';
 import { Variable } from 'app/model/variable.model';
 import { Workflow } from 'app/model/workflow.model';
 import { NavbarService } from 'app/service/navbar/navbar.service';
+import { ProjectStore } from 'app/service/services.module';
 import { WorkflowRunService } from 'app/service/workflow/run/workflow.run.service';
 import { WorkflowService } from 'app/service/workflow/workflow.service';
 import { ApplicationsState } from './applications.state';
@@ -26,7 +27,7 @@ describe('Project', () => {
 
     beforeEach(async(() => {
         TestBed.configureTestingModule({
-            providers: [NavbarService, WorkflowService, WorkflowRunService],
+            providers: [NavbarService, WorkflowService, WorkflowRunService, ProjectStore],
             imports: [
                 HttpClientTestingModule,
                 NgxsModule.forRoot([ProjectState, ApplicationsState, PipelinesState, WorkflowState])
@@ -1110,7 +1111,7 @@ describe('Project', () => {
         })).flush(<Project>{
             name: 'proj1',
             key: 'test1',
-            environments: [{name: 'prod'}]
+            environments: [{ name: 'prod' }]
         });
 
         let env = new Environment();
